@@ -45,35 +45,68 @@ function buildInfluxURL_(url, database, query, user, password)
  * @param {json} data JSON response from InfluxDB.
  * @return Array of arrays, i.e. an array of rows.
  */
-function smartParseResponse_(data) {
-   
+function smartParseResponse_(data) 
+{   
   try
   {
     // First we do our own checks on what we expect the data to look like. 
     if (data["results"].length == 0)
       throw "QUERY RETURNED NO RESULTS";
     
+    // TODO: Is this necessary? It'll possibly mean we fail when handling multiple
+    // series from a group by query.
     if (!("series" in data["results"][0]))
       throw "QUERY RETURNED NO SERIES";    
     
-    if (data["results"].length != 1 || data["results"][0]["series"].length != 1)
-      throw "EXPECTED EXACTLY 1 'results' AND EXACTLY 1 'series'.";
+    if (data["results"].length != 1)
+      throw "EXPECTED EXACTLY 1 element in 'results' array'.";
     
-    // From now on, any unexpected problems will be caught generically.
+    // Convenience variable as we assume only one results
+    // TODO: Investigate when more than one result can occur. IIRC it's only going
+    // to happen if you send multiple queries to the API so shouldn't affect us.
+    var result = data["results"][0];
+    
     var rows = [];     
-    series = data["results"][0]["series"][0];
-    rows.push(series["columns"]);  
-
-    for (var iRow = 0; iRow < series["values"].length; ++iRow)
+    for (var iSeries = 0; iSeries < result["series"].length; ++iSeries)
     {
-      var row = [];    
-      for (var iCol = 0; iCol < series["columns"].length; ++iCol)
+      var series = result["series"][iSeries];
+      
+      // N.B. We ignore the series["name"] value. We could potentially use it but
+      // I suspect it's just clutter.
+      
+      // We have tags if (and only if?) the query contains the 'group by' clause.
+      if ("tags" in series)
       {
-        row.push(series["values"][iRow][iCol]);
-      }    
-      rows.push(row);
+        var groupHeading = "Tags:";
+        var tags = series["tags"];
+        for (var tag in tags) 
+        {
+          if (tags.hasOwnProperty(tag)) 
+          {
+            groupHeading += " ";
+            groupHeading += tag;
+            groupHeading += ": ";
+            groupHeading += tags[tag];            
+          }
+        } 
+        // Add a row with all the tags for this group
+        rows.push(groupHeading);
+      }
+
+      // Add the headings of the data
+      rows.push(series["columns"]);  
+  
+      for (var iRow = 0; iRow < series["values"].length; ++iRow)
+      {
+        var row = [];    
+        for (var iCol = 0; iCol < series["columns"].length; ++iCol)
+        {
+          row.push(series["values"][iRow][iCol]);
+        }    
+        rows.push(row);
+      }
     }
-    return rows;
+    return rows;    
   }
   catch(err)
   {
@@ -116,12 +149,19 @@ function runInfluxQuery_(url)
   return JSON.parse(response.getContentText());
 }
 
+/**
+ * Helper function for enforcing use of an input parameter.
+ */
 function parameterRequired_(name, value)
 {
     if (typeof(value) == "undefined")
       throw "'" + name + "' PARAMETER IS REQUIRED";  
 }
 
+/**
+ * Helper function for setting an input parameter to a default value if
+ * it's not defined.
+ */
 function parameterDefault_(current, _default)
 {
     if (typeof(current) == "undefined")
