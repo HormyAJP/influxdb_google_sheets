@@ -5,7 +5,7 @@
 function validateURL_(url)
 {
   return;
-  //throw "Bad URL"; 
+  //throw "Bad URL";
 }
 
 /**
@@ -14,7 +14,7 @@ function validateURL_(url)
  */
 function validateQuery_(query) {
   return;
-  //throw "Bad Query";   
+  //throw "Bad Query";
 }
 
 /**
@@ -29,13 +29,13 @@ function buildInfluxURL_(url, database, query, user, password)
     throw "PASSWORD BUT NO USER"
 
   if (user)
-  {    
+  {
     url += "u=" + user;
-    url += "&p=" + password;    
+    url += "&p=" + password;
   }
- 
-  url += "&db=" + database;  
-  url += "&q=" + encodeURIComponent(query); 
+
+  url += "&db=" + database;
+  url += "&q=" + encodeURIComponent(query);
   return url;
 }
 
@@ -45,94 +45,96 @@ function buildInfluxURL_(url, database, query, user, password)
  * @param {json} data JSON response from InfluxDB.
  * @return Array of arrays, i.e. an array of rows.
  */
-function smartParseResponse_(data) 
-{   
+function smartParseResponse_(data)
+{
   try
   {
-    // First we do our own checks on what we expect the data to look like. 
+    // First we do our own checks on what we expect the data to look like.
     if (data["results"].length == 0)
       throw "QUERY RETURNED NO RESULTS";
-    
+
     // TODO: Is this necessary? It'll possibly mean we fail when handling multiple
     // series from a group by query.
     if (!("series" in data["results"][0]))
-      throw "QUERY RETURNED NO SERIES";    
-    
+      throw "QUERY RETURNED NO SERIES";
+
     if (data["results"].length != 1)
       throw "EXPECTED EXACTLY 1 element in 'results' array'.";
-    
+
     // Convenience variable as we assume only one results
     // TODO: Investigate when more than one result can occur. IIRC it's only going
     // to happen if you send multiple queries to the API so shouldn't affect us.
     var result = data["results"][0];
-    
-    var rows = [];     
+
+    var rows = [];
     for (var iSeries = 0; iSeries < result["series"].length; ++iSeries)
     {
       var series = result["series"][iSeries];
-      
+
       // N.B. We ignore the series["name"] value. We could potentially use it but
       // I suspect it's just clutter.
-      
+
       // We have tags if (and only if?) the query contains the 'group by' clause.
       if ("tags" in series)
       {
         var groupHeading = "Tags:";
         var tags = series["tags"];
-        for (var tag in tags) 
+        for (var tag in tags)
         {
-          if (tags.hasOwnProperty(tag)) 
+          if (tags.hasOwnProperty(tag))
           {
             groupHeading += " ";
             groupHeading += tag;
             groupHeading += ": ";
-            groupHeading += tags[tag];            
+            groupHeading += tags[tag];
           }
-        } 
+        }
         // Add a row with all the tags for this group
         rows.push(groupHeading);
       }
 
       // Add the headings of the data
-      rows.push(series["columns"]);  
-  
+      rows.push(series["columns"]);
+
       for (var iRow = 0; iRow < series["values"].length; ++iRow)
       {
-        var row = [];    
+        var row = [];
         for (var iCol = 0; iCol < series["columns"].length; ++iCol)
         {
           row.push(series["values"][iRow][iCol]);
-        }    
+        }
         rows.push(row);
       }
     }
-    return rows;    
+    return rows;
   }
   catch(err)
   {
-    throw "RETURNED DATA HAD UNEXPECTED FORMAT: You may need to enhance the script. Pass raw=TRUE to see the raw json returned by InfluxDB. Error was: " + err; 
-  }    
+    throw "RETURNED DATA HAD UNEXPECTED FORMAT: You may need to enhance the script. Pass raw=TRUE \
+           to see the raw json returned by InfluxDB. Error was: " + err;
+  }
 }
 
 /**
- * If the response code is not 200 from the passed reponse then 
+ * If the response code is not 200 from the passed reponse then
  * raise an exception with the most helpful message possible.
  */
 function checkResponse_(response)
 {
   if (response.getResponseCode() == 200)
-    return 
-    
+    return
+
   var text = response.getContentText();
   if (text.indexOf("authentication failed") != -1)
-    throw "BAD CREDENTIALS"; 
-  
+    throw "BAD CREDENTIALS";
+
   var json = JSON.parse(text)
-  
+
   if ("error" in json)
     throw "INFLUX ERROR: " + json["error"];
-  
-  throw "UNKNOWN ERROR: Http Response Code = " + response.getResponseCode() + ", Response = " + text;
+
+  throw "UNKNOWN ERROR: Http Response Code = " + response.getResponseCode()
+        + ", Response = " + text;
 }
 
 /**
@@ -155,7 +157,7 @@ function runInfluxQuery_(url)
 function parameterRequired_(name, value)
 {
     if (typeof(value) == "undefined")
-      throw "'" + name + "' PARAMETER IS REQUIRED";  
+      throw "'" + name + "' PARAMETER IS REQUIRED";
 }
 
 /**
@@ -172,42 +174,42 @@ function parameterDefault_(current, _default)
 
 /**
  * Run a query on an InfluxDB and return parsed data.
- * @param {string} url The base URL for the influxdb instance including 
+ * @param {string} url The base URL for the influxdb instance including
  * port, e.g. https://influx.my.company.com:8086.
  * @param {string} database The database to query from.
  * @param {string} query The InfluxDB query to run.
  * @param {string} user User name if auth is required.
  * @param {string} password Password if auth is required.
- * @param {string} raw Return raw json from Influx rather than trying to 
+ * @param {string} raw Return raw json from Influx rather than trying to
  * parse it. Useful for debugging.
  * @return Results from the query or error message otherwise
  * @customfunction
  */
 function INFLUXQUERY(url, database, query, user, password, raw)
-{  
+{
   try
   {
     parameterRequired_("url", url);
     parameterRequired_("database", database);
-    parameterRequired_("query", query);    
+    parameterRequired_("query", query);
     user = parameterDefault_(user, false);
     password = parameterDefault_(password, false);
-    raw = parameterDefault_(raw, false);  
-        
+    raw = parameterDefault_(raw, false);
+
     validateURL_(url);
     validateQuery_(query);
     url = buildInfluxURL_(url, database, query, user, password);
     json = runInfluxQuery_(url);
-    
+
     if (raw)
       return JSON.stringify(json);
     else
-      return smartParseResponse_(json); 
+      return smartParseResponse_(json);
   }
   catch(err)
   {
     if (typeof(err) != "string")
       err = JSON.stringify(err);
-    return "ERROR: " + err;      
+    return "ERROR: " + err;
   }
 }
