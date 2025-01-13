@@ -20,7 +20,7 @@ function validateQuery_(query) {
 /**
  * Create a full influx URL with query string.
  */
-function buildInfluxURL_(url, database, query, user, password)
+function buildInfluxURLv1_(url, database, query, user, password)
 {
   url = url + "/query?";
   if (user && !password)
@@ -37,6 +37,14 @@ function buildInfluxURL_(url, database, query, user, password)
   url += "&db=" + database;
   url += "&q=" + encodeURIComponent(query);
   return url;
+}
+
+/**
+ * Create a full influx URL with query string.
+ */
+function buildInfluxURLv2_(url, org_id)
+{
+  return url + "/api/v2/query?orgID=" + org_id;
 }
 
 /**
@@ -140,7 +148,7 @@ function checkResponse_(response)
 /**
  * Run the Influx query and get the raw response from the server.
  */
-function runInfluxQuery_(url)
+function runInfluxQueryv1_(url)
 {
 
   // We could just let this function throw but setting muteHttpExceptions
@@ -149,6 +157,25 @@ function runInfluxQuery_(url)
   var response = UrlFetchApp.fetch(url, {"muteHttpExceptions":true});
   checkResponse_(response);
   return JSON.parse(response.getContentText());
+}
+
+/**
+ * Run the Influx query and get the raw response from the server.
+ */
+function runInfluxQueryv2_(url, token, query) {
+  var headers = {
+      'Authorization' : 'Token ' + token,
+      'Accept' : 'application/csv',
+      'Content-type': 'application/vnd.flux'
+  };
+  var option = {
+      'method' : 'post',
+      'headers' : headers,
+      'payload' : query,
+      'muteHttpExceptions' : true
+  };
+  var response = UrlFetchApp.fetch(url, option);
+  return response.getContentText();
 }
 
 /**
@@ -172,8 +199,18 @@ function parameterDefault_(current, _default)
       return current;
 }
 
+function csvToArray(csvString) {
+  const rows = csvString.split(/\r?\n/);
+  return rows.map(function(row) {
+    return row.split(',')
+  });
+}
+
+
 /**
  * Run a query on an InfluxDB and return parsed data.
+ * This function targets the old Influx v1 API.
+ * WARNING: This code is legacy and may not work in the future.
  * @param {string} url The base URL for the influxdb instance including
  * port, e.g. https://influx.my.company.com:8086.
  * @param {string} database The database to query from.
@@ -185,7 +222,7 @@ function parameterDefault_(current, _default)
  * @return Results from the query or error message otherwise
  * @customfunction
  */
-function INFLUXQUERY(url, database, query, user, password, raw)
+function INFLUXQUERYv1(url, database, query, user, password, raw)
 {
   try
   {
@@ -198,7 +235,7 @@ function INFLUXQUERY(url, database, query, user, password, raw)
 
     validateURL_(url);
     validateQuery_(query);
-    url = buildInfluxURL_(url, database, query, user, password);
+    url = runInfluxQueryv1_(url, database, query, user, password);
     json = runInfluxQuery_(url);
 
     if (raw)
@@ -213,3 +250,37 @@ function INFLUXQUERY(url, database, query, user, password, raw)
     return "ERROR: " + err;
   }
 }
+
+/**
+ * Run a query on an InfluxDB and return parsed data.
+ * @param {string} url The base URL for the influxdb instance including
+ * port, e.g. https://influx.my.company.com:8086.
+ * @param {string} org_id Influx organisation ID.
+ * @param {string} query The InfluxDB query to run.
+ * @param {string} token Influx access token
+ * @return Results from the query or error message otherwise
+ * @customfunction
+ */
+function INFLUXQUERYv2(url, org_id, query, token)
+{
+  try
+  {
+    parameterRequired_("url", url);
+    parameterRequired_("org_id", org_id);
+    parameterRequired_("query", query);
+    parameterRequired_("token", token);
+
+    validateURL_(url);
+    validateQuery_(query);
+    url = buildInfluxURLv2_(url, org_id);
+    csv = runInfluxQueryv2_(url, token, query);
+    return csvToArray(csv);
+  }
+  catch(err)
+  {
+    if (typeof(err) != "string")
+      err = JSON.stringify(err);
+    return "ERROR: " + err;
+  }
+}
+
